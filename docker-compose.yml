@@ -1,0 +1,69 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13.7-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 10s
+      timeout: 5s
+
+  cassandra:
+    image: cassandra:5.0.3
+    environment:
+      CASSANDRA_CLUSTER_NAME: PubSubCluster
+    ports:
+      - "9042:9042"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+
+  cassandra-init:
+    image: cassandra:5.0.3
+    depends_on:
+      cassandra:
+        condition: service_healthy  # Ждём, пока Cassandra станет healthy
+    volumes:
+      - ./cassandra/migrations:/migrations
+    command:
+      - /bin/bash
+      - -c
+      - |
+        until cqlsh cassandra -f /migrations/01_init.cql; do  # Повторяем до успеха
+          echo "Ожидание готовности Cassandra..."
+          sleep 5
+        done
+
+  publisher:
+    build: .
+    env_file: .env.example
+    volumes:
+      - ./input.txt:/app/input.txt
+    command: python -m src.publisher.publisher
+    depends_on:
+      - rabbitmq
+      - cassandra-init
+      - cassandra
+
+  consumer1:
+    build: .
+    env_file: .env.example
+    command: sh -c "python -m src.consumer.consumer processed_alpha"
+    depends_on:
+      - cassandra-init
+
+  consumer2:
+    build: .
+    env_file: .env.example
+    command: sh -c "python -m src.consumer.consumer processed_beta"
+    depends_on:
+      - cassandra-init
