@@ -31,14 +31,14 @@ services:
     image: cassandra:5.0.3
     depends_on:
       cassandra:
-        condition: service_healthy  # Ждём, пока Cassandra станет healthy
+        condition: service_healthy
     volumes:
       - ./cassandra/migrations:/migrations
     command:
       - /bin/bash
       - -c
       - |
-        until cqlsh cassandra -f /migrations/01_init.cql; do  # Повторяем до успеха
+        until cqlsh cassandra -f /migrations/01_init.cql; do
           echo "Ожидание готовности Cassandra..."
           sleep 5
         done
